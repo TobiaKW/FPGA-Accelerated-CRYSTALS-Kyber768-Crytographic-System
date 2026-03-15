@@ -135,9 +135,9 @@ initial begin
 
 	for (read_count = 0; read_count < 64 && !ofifo0_empty; read_count = read_count + 1) begin
 		ofifo0_req = 1'b1;
-		@(posedge clk);
+		@(posedge clk);   // dout valid this cycle (standard FIFO: 1 cycle after rd_en)
+		$display("ofifo0_dout[%0d] = %h", read_count, ofifo0_dout);
 		ofifo0_req = 1'b0;
-		$display("ofifo0_dout = %h", ofifo0_dout);
 		@(posedge clk);
 	end
 	if (read_count >= 64)
