@@ -38,7 +38,7 @@ wire [5:0] squeeze_ctr;
 wire [7:0] fifo_GENA_ctr;
 
 reg [255:0] d;
-integer i, read_count;
+integer i, read_count, block_num;
 
 // Clock generation: 100MHz (10ns period)
 always #5 clk = ~clk;
@@ -111,38 +111,41 @@ initial begin
 	ofifo_ena  = 1'b1;
 	repeat(2) @(posedge clk);
 
-	// Phase 3: Feed input data
-	for (i = 0; i < 8; i = i + 1) begin
-    	ififo_wen    = 1'b1;		//separated control signal
-		ififo_mode   = 2'b00;  		//bit35:34
-    	ififo_absorb = 1'b0;           //bit33
-    	ififo_last   = (i == 7);       //bit32, high when last word in the blk
-		ififo_din    = d[32*i +: 32];  //bit 31:0
-    	#10;                           // wait one cycle
-	end	
-	//when feeding data, ififo_empty automatically becomes 0 and trigger keccak core to start absorbing data
+	// Phase 3–5 loop: 8 blocks (each block = 8 words, then wait ready, then drain ofifo0)
+	for (block_num = 0; block_num < 8; block_num = block_num + 1) begin
+		$display("--- Block %0d ---", block_num);
+		// Phase 3: Feed 8 words
+		for (i = 0; i < 8; i = i + 1) begin
+			@(posedge clk);
+			ififo_wen    = 1'b1;
+			ififo_mode   = 2'b00;
+			ififo_absorb = 1'b0;
+			ififo_last   = (i == 7);
+			ififo_din    = d[32*i +: 32];
+		end
+		ififo_wen  = 1'b0;
+		ififo_last = 1'b0;
 
-	ififo_wen = 1'b0;//disable input
-	ififo_last = 1'b0;//reset last bit
-	// Phase 4: Wait for keccak_ready
-	// TODO
-	@(posedge clk);
-	wait(keccak_ready ==  1'b1);
-	@(posedge clk);
-	// Phase 5: Raw hash is on keccak_dout (ofifo0 may stay empty: keccak_squeeze=0 after ready in unmodified server)
-	$display("keccak_ready seen. keccak_dout = %h", keccak_dout);
-	repeat(32) @(posedge clk);
-
-	for (read_count = 0; read_count < 64 && !ofifo0_empty; read_count = read_count + 1) begin
-		ofifo0_req = 1'b1;
-		@(posedge clk);   // dout valid this cycle (standard FIFO: 1 cycle after rd_en)
-		$display("ofifo0_dout[%0d] = %h", read_count, ofifo0_dout);
-		ofifo0_req = 1'b0;
+		// Phase 4: Wait for keccak_ready
 		@(posedge clk);
+		wait(keccak_ready == 1'b1);
+		@(posedge clk);
+		$display("Block %0d keccak_ready. keccak_dout = %h", block_num, keccak_dout);
+		repeat(32) @(posedge clk);
+
+		// Phase 5: Read ofifo0 until empty (feed next block only after empty)
+		for (read_count = 0; read_count < 64 && !ofifo0_empty; read_count = read_count + 1) begin
+			ofifo0_req = 1'b1;
+			@(posedge clk);
+			$display("ofifo0_dout block %0d [%0d] = %h", block_num, read_count, ofifo0_dout);
+			ofifo0_req = 1'b0;
+			@(posedge clk);
+		end
+		if (read_count >= 64)
+			$display("Stopping after 64 reads (safety limit)");
+		$display("Block %0d done. ofifo0_empty = %b", block_num, ofifo0_empty);
 	end
-	if (read_count >= 64)
-		$display("Stopping after 64 reads (safety limit)");
-	$display("Phase 5 done. ofifo0_empty = %b", ofifo0_empty);
+	$display("All 8 blocks done.");
 	$finish;
 end
 
