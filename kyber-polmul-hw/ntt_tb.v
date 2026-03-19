@@ -17,6 +17,7 @@ wire                    done;
 // Internal polynomial storage for TB
 reg  [11:0] poly_in  [0:255]; 
 reg  [11:0] poly_out [0:255];
+integer i;
 
 // Clock generation: 100 MHz (10 ns period)
 always #5 clk = ~clk;
