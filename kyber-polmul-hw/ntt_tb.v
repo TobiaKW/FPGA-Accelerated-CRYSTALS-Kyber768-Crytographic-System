@@ -122,7 +122,16 @@ initial begin
     wait (done == 1'b1);
     @(posedge clk);
 
-    $display("NTT TB finished.");
+    read_a = 1'b1;
+    @(posedge clk);
+    read_a = 1'b0;
+    wait (done == 1'b1);
+    @(posedge clk);
+
+    for (k = 0; k < 260; k = k + 1) begin
+        @(posedge clk);
+        $display("t=%0t dout=%0d", $time, dout);
+    end
     $finish;
 end
 
