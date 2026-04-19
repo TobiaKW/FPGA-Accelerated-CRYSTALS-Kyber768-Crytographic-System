@@ -37,11 +37,33 @@ wire ofifo0_empty, ofifo1_empty;
 wire [5:0] squeeze_ctr;
 wire [7:0] fifo_GENA_ctr;
 
+// Additional monitoring signals
+wire [31:0] internal_fifo_dout;  // From fifo8
+wire internal_fifo_empty;        // From fifo8
+wire internal_fifo_full;         // From fifo8
+wire [23:0] decode_dout_mon;     // From decoder
+wire decode_valid_mon;           // From decoder
+
 reg [255:0] d;
 integer i, read_count;
+integer phase_delay;
 
 // Clock generation: 100MHz (10ns period)
 always #5 clk = ~clk;
+
+// Debug monitor: Print key signals every 50 cycles during Phase 4-5
+initial begin
+	#100 // Wait for initialization
+	forever begin
+		repeat(50) @(posedge clk);
+		if($time > 1000 && $time < 5000) begin
+			$display("[T=%0t] keccak_ready=%b, squeeze_ctr=%d, keccak_squeeze=%b, ofifo_ena=%b, keccak_ctr=%h, ofifo0_empty=%b, ofifo_full=%b",
+				$time, keccak_ready, squeeze_ctr, DUT.keccak_squeeze, ofifo_ena, keccak_ctr, ofifo0_empty, ofifo_full);
+		end
+	end
+end
+
+
 
 // DUT instantiation
 hash_core_Server DUT (	//enable control of input and output
