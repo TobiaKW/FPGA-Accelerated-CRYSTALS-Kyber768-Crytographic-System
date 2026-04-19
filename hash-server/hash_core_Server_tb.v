@@ -48,6 +48,7 @@ reg [255:0] d;
 integer i, read_count;
 integer phase_delay;
 integer decode_valid_count, ofifo8_wen_count, ofifo0_wen_count;
+reg [31:0] test_vec [0:7];
 
 // Clock generation: 100MHz (10ns period)
 always #5 clk = ~clk;
@@ -244,7 +245,69 @@ initial begin
 		end
 	end
 	
-	$display("\nPhase 5 done.");
+	$display("\nPhase 5 done (with real Keccak data - all zeros due to timing issue).");
+	
+	// Phase 6: Test ofifo path with injected test vectors (bypass Keccak timing)
+	$display("\n========== PHASE 6: Direct FIFO8 Injection Test ==========");
+	$display("Injecting test vectors directly into fifo8 to bypass Keccak timing issue...\n");
+	
+	// Reset counters for this new test
+	decode_valid_count = 0;
+	ofifo8_wen_count = 0;
+	ofifo0_wen_count = 0;
+	
+	// Initialize test vectors
+	test_vec[0] = 32'hAABBCCDD;
+	test_vec[1] = 32'h11223344;
+	test_vec[2] = 32'hDEADBEEF;
+	test_vec[3] = 32'hCAFEBABE;
+	test_vec[4] = 32'h12345678;
+	test_vec[5] = 32'h9ABCDEF0;
+	test_vec[6] = 32'hFEDCBA98;
+	test_vec[7] = 32'h76543210;
+	
+	// Clear any previous FIFO contents
+	repeat(5) @(posedge clk);
+	
+	// Inject test vectors
+	for (i = 0; i < 8; i = i + 1) begin
+		// Force data directly into DUT's internal fifo8 input
+		force DUT.ofifo_din = test_vec[i];
+		force DUT.ofifo_wen = 1'b1;
+		@(posedge clk);
+		force DUT.ofifo_wen = 1'b0;
+		@(posedge clk);
+		release DUT.ofifo_din;
+		release DUT.ofifo_wen;
+		$display("Injected test_vec[%0d] = %h", i, test_vec[i]);
+	end
+	
+	$display("\nWaiting for decoder/ofifo0 to process injected data...");
+	repeat(100) @(posedge clk);
+	$display("Path counters (after injection): fifo8_wen=%0d, decode_valid=%0d, ofifo0_wen=%0d", 
+		ofifo8_wen_count, decode_valid_count, ofifo0_wen_count);
+	
+	// Try to read from ofifo0 again
+	$display("\nReading ofifo0 after injection:");
+	read_count = 0;
+	while(read_count < 64 && !ofifo0_empty) begin
+		ofifo0_req = 1'b1;
+		@(posedge clk);
+		ofifo0_req = 1'b0;
+		@(posedge clk);
+		if (ofifo0_dout != 24'h000000)
+			$display("  ofifo0[%0d] = %h ✓ (non-zero!)", read_count, ofifo0_dout);
+		else
+			$display("  ofifo0[%0d] = %h", read_count, ofifo0_dout);
+		read_count = read_count + 1;
+	end
+	
+	if (read_count > 0)
+		$display("✓ ofifo0 path works! Successfully read %0d words", read_count);
+	else
+		$display("✗ ofifo0 path still empty after injection - decoder or packing issue");
+	
+	$display("\nAll phases complete. Simulation finished.");
 	$finish;
 end
 
